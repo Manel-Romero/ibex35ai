@@ -1,11 +1,16 @@
+import os
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from datetime import timedelta
 from factors import compute_factors
-from companies import IBEX35_SECTORS
+from backtesting_companies import IBEX35_SECTORS_HISTORIC as IBEX35_SECTORS
 
-def prepare_merged(market_csv='ibex35_market_data.csv', sentiment_csv='ibex35_news_sentiment.csv', use_sentiment=True):
+def prepare_merged(market_csv='ibex35_market_data_historic.csv', sentiment_csv='ibex35_news_sentiment_historic.csv', use_sentiment=True):
+    if not os.path.exists(market_csv) and os.path.exists('ibex35_market_data.csv'):
+        pd.read_csv('ibex35_market_data.csv').to_csv(market_csv, index=False)
+    if not os.path.exists(sentiment_csv) and os.path.exists('ibex35_news_sentiment.csv'):
+        pd.read_csv('ibex35_news_sentiment.csv').to_csv(sentiment_csv, index=False)
     m = pd.read_csv(market_csv)
     s = pd.read_csv(sentiment_csv)
     m['Date'] = pd.to_datetime(m['Date'])
@@ -14,7 +19,8 @@ def prepare_merged(market_csv='ibex35_market_data.csv', sentiment_csv='ibex35_ne
     s = s[['date','ticker','company','sector','calibrated_score']].rename(columns={'date':'Date'})
     daily = s.groupby(['company','Date'])['calibrated_score'].mean().reset_index().rename(columns={'calibrated_score':'Daily_Sentiment', 'company':'Company'})
     df = pd.merge(m, daily, on=['Company','Date'], how='left')
-    
+    price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
+    df = df[df[price_col].notna() & (df[price_col] > 0)]
     if use_sentiment:
         df['Daily_Sentiment'] = df.groupby('Company')['Daily_Sentiment'].ffill(limit=5).fillna(0.0)
         
@@ -30,18 +36,19 @@ def prepare_merged(market_csv='ibex35_market_data.csv', sentiment_csv='ibex35_ne
     if use_sentiment:
         df['Sentiment_30D'] = df.groupby('Company')['Daily_Sentiment'].rolling(30).mean().reset_index(level=0, drop=True)
         df['Sentiment_7D'] = df.groupby('Company')['Daily_Sentiment'].rolling(7).mean().reset_index(level=0, drop=True)
-        
-    df['Return_1D'] = df.groupby('Company')['Close'].pct_change(1)
-    df['Return_1M'] = df.groupby('Company')['Close'].pct_change(20)
-    df['Forward_Return_1W'] = df.groupby('Company')['Close'].transform(lambda x: x.shift(-5) / x - 1)
+    df['Return_1D'] = df.groupby('Company')[price_col].pct_change(1)
+    df['Return_1M'] = df.groupby('Company')[price_col].pct_change(20)
+    df['Forward_Return_1W'] = df.groupby('Company')[price_col].transform(lambda x: x.shift(-5) / x - 1)
     df['Target_1W'] = df['Forward_Return_1W'] - df.groupby('Date')['Forward_Return_1W'].transform('mean')
     return df
 
 def select_universe(df_row, sector_counts, max_per_sector):
     return sector_counts.get(df_row['sector'], 0) < max_per_sector and df_row['liquidity_flag'] == 1
 
-def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.2, use_sentiment=True, confidence_threshold=0.005):
+def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.2, use_sentiment=True, confidence_threshold=0.005, start_date=None):
     df = prepare_merged(use_sentiment=use_sentiment)
+    if start_date is not None:
+        df = df[df['Date'] >= pd.to_datetime(start_date)]
     base_cols = ['momentum_1w','momentum_1m','momentum_3m','momentum_6m','vol_1m','vol_3m','avg_volume_20','Return_1M','dist_52w_high','beta_3m','month_sin','month_cos','turn_of_month']
     
     if use_sentiment:
@@ -54,10 +61,13 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
     # Identificar Viernes (Weekday 4)
     df['Weekday'] = df['Date'].dt.weekday
     trade_dates = sorted(df[df['Weekday'] == 4]['Date'].unique())
-    
-    start_idx = 0
-    while start_idx < len(trade_dates) and (trade_dates[start_idx] - trade_dates[0]).days < train_years*365:
-        start_idx += 1
+    if start_date is not None:
+        start_dt = pd.to_datetime(start_date)
+        start_idx = next((i for i, d in enumerate(trade_dates) if d >= start_dt), len(trade_dates))
+    else:
+        start_idx = 0
+        while start_idx < len(trade_dates) and (trade_dates[start_idx] - trade_dates[0]).days < train_years*365:
+            start_idx += 1
     
     print(f"Iniciando Backtest Semanal (Viernes con datos del día previo) - {len(trade_dates)-start_idx} semanas...")
     
@@ -111,9 +121,9 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         # Calcular retorno del mercado entre curr_date y next_date
         # Necesitamos precios en next_date para el universo disponible en curr_date
         
-        # Mapa de precios futuros
-        next_prices = df[df['Date'] == next_date].set_index('Company')['Close']
-        curr_prices = df[df['Date'] == curr_date].set_index('Company')['Close']
+        price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
+        next_prices = df[df['Date'] == next_date].set_index('Company')[price_col]
+        curr_prices = df[df['Date'] == curr_date].set_index('Company')[price_col]
         if curr_prices.empty or next_prices.empty:
             period_returns.append(0.0)
             benchmark_returns.append(0.0)

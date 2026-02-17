@@ -1,4 +1,4 @@
-# Sistema de Inversión IA IBEX35
+# IBEX35 AI
 
 ## Descripción del Proyecto
 Este proyecto implementa un sistema automatizado para el análisis de *swing trading* en el mercado IBEX35. Integra análisis de sentimiento avanzado mediante modelos Transformer (BERT) con datos técnicos de mercado para generar recomendaciones de inversión con horizonte semanal.
@@ -26,6 +26,11 @@ El flujo de trabajo consta de tres etapas principales:
     *   Optimiza la asignación de capital mediante una distribución ponderada basada en el potencial de retorno o puntuaciones de seguridad.
     *   Genera `ibex35_portfolios.csv`.
 
+Adicionalmente, existe un flujo específico de **backtesting histórico**:
+
+-   **Universo Histórico (`backtesting_companies.py`)**: Define un universo ampliado de compañías del IBEX35, incluyendo miembros antiguos utilizados únicamente para las simulaciones históricas.
+-   **Backtesting Walk-Forward (`backtesting.py`)**: Ejecuta la estrategia sobre el universo histórico, reutilizando como librerías los mismos factores y datos de mercado que el sistema principal.
+
 ## Requisitos Previos
 
 *   Python 3.8+
@@ -46,23 +51,49 @@ Ejecute el scraper para recopilar las últimas noticias y calcular puntuaciones 
 python scraper.py
 ```
 
-### 2. Entrenamiento del Modelo y Predicción
+### 2. Descarga de Datos de Mercado
+Descargue los datos históricos de precios para todas las compañías del IBEX35.
+
+```bash
+python market_data.py
+```
+
+Este paso genera los ficheros de precios necesarios. Si solo existen las versiones estándar (`ibex35_market_data.csv`), el módulo de backtesting creará automáticamente una copia histórica con sufijo `_historic` la primera vez que se ejecute.
+
+### 3. Entrenamiento del Modelo y Predicción
 Entrene el modelo de IA utilizando los últimos datos de sentimiento y mercado para generar predicciones de retorno.
 
 ```bash
 python investment_model.py
 ```
 
-### 3. Generación de Carteras
+### 4. Generación de Carteras
 Genere carteras de inversión optimizadas basadas en las predicciones del modelo.
 
 ```bash
 python generate_portfolios.py
 ```
 
+### 5. Backtesting Histórico
+Ejecute el backtesting walk-forward utilizando los datos históricos generados (idénticos a los utilizados en el cuaderno `colab_backtest.ipynb`).
+
+```bash
+python backtesting.py
+```
+
+El script utiliza por defecto los archivos:
+
+- `ibex35_market_data_historic.csv`
+- `ibex35_news_sentiment_historic.csv`
+
+Si estos archivos no existen pero están disponibles las versiones estándar (`ibex35_market_data.csv`, `ibex35_news_sentiment.csv`), se crearán automáticamente como copias iniciales para facilitar la migración.
+
 ## Archivos de Salida
 
-*   **`ibex35_news_sentiment.csv`**: Datos de sentimiento crudos para cada noticia procesada.
+*   **`ibex35_news_sentiment.csv`**: Datos de sentimiento crudos para cada noticia procesada (última ejecución).
+*   **`ibex35_news_sentiment_historic.csv`**: Versión histórica consolidada usada para backtesting; si no existe, se inicializa como copia de `ibex35_news_sentiment.csv` cuando se ejecuta `backtesting.py`.
+*   **`ibex35_market_data.csv`**: Datos de mercado descargados más recientes.
+*   **`ibex35_market_data_historic.csv`**: Copia histórica de precios utilizada para backtesting; si no existe, se inicializa como copia de `ibex35_market_data.csv` cuando se ejecuta `backtesting.py`.
 *   **`investment_report.csv`**: Informe de predicción detallado por empresa, incluyendo retorno estimado semanal y puntuación de confianza/seguridad.
 *   **`ibex35_portfolios.csv`**: Recomendaciones finales de inversión agrupadas por estrategia, incluyendo la asignación de capital específica por empresa.
 
@@ -83,7 +114,16 @@ python generate_portfolios.py
 
 ## Resultados del Backtesting
 
-1978
+El módulo `backtesting.py` ejecuta un *backtest walk-forward* semanal con rebalanceo los viernes, utilizando exactamente los mismos datos históricos que el cuaderno `colab_backtest.ipynb`. Por defecto:
+
+- Se entrenan modelos de Random Forest sobre una ventana histórica mínima de 5 años (o desde la fecha indicada en `start_date`).
+- Las decisiones de inversión se toman el viernes utilizando información disponible hasta el cierre del jueves.
+- Se limita la concentración sectorial y se filtra por liquidez mediante `liquidity_flag`.
+
+La ejecución genera:
+
+- Un fichero `backtest_trades.csv` con el detalle de todas las operaciones simuladas.
+- Una curva de capital de la estrategia frente al benchmark de mercado.
 
 ## Notas Técnicas sobre la Estrategia de Backtesting
 
