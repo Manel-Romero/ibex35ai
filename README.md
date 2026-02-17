@@ -1,141 +1,94 @@
 # IBEX35 AI
 
-## Descripción del Proyecto
-Este proyecto implementa un sistema automatizado para el análisis de *swing trading* en el mercado IBEX35. Integra análisis de sentimiento avanzado mediante modelos Transformer (BERT) con datos técnicos de mercado para generar recomendaciones de inversión con horizonte semanal.
+## Descripción
 
-El sistema está diseñado para maximizar retornos mientras gestiona el riesgo a través de estrategias de construcción de carteras diversificadas, que van desde enfoques puramente técnicos hasta selecciones impulsadas por el sentimiento de mercado.
+Sistema en Python para analizar el IBEX35 usando datos de mercado y noticias.
 
-## Arquitectura del Sistema
+## Instalación rápida
 
-El flujo de trabajo consta de tres etapas principales:
+- Python 3.8 o superior  
+- Instalar dependencias:
 
-1.  **Adquisición de Datos y Análisis de Sentimiento (`scraper.py`)**
-    *   Extrae noticias financieras de múltiples fuentes para empresas del IBEX35.
-    *   Analiza el sentimiento utilizando `pysentimiento` (roberta-base-bne) con una estrategia de fragmentación (*chunking*) para procesar textos largos.
-    *   Genera `ibex35_news_sentiment.csv` que contiene puntuaciones de sentimiento calibradas (Probabilidad Positiva - Probabilidad Negativa).
+```bash
+pip install -r requirements.txt
+```
 
-2.  **Modelado Predictivo (`investment_model.py`)**
-    *   Fusiona datos de sentimiento con datos históricos de mercado (`ibex35_market_data.csv`).
-    *   Calcula indicadores técnicos: Momentum, Volatilidad, Beta, Liquidez y estacionalidad.
-    *   Entrena un *Random Forest Regressor* para predecir retornos a una semana.
-    *   Produce `investment_report.csv` con retornos estimados y puntuaciones de seguridad.
+## Flujo básico
 
-3.  **Generación de Carteras (`generate_portfolios.py`)**
-    *   Construye carteras de inversión diversificadas basadas en diferentes perfiles de riesgo y estrategias.
-    *   Las estrategias incluyen: Técnica Pura, Sentimiento Puro, Balanceada Agresiva, Crecimiento Estable, entre otras.
-    *   Optimiza la asignación de capital mediante una distribución ponderada basada en el potencial de retorno o puntuaciones de seguridad.
-    *   Genera `ibex35_portfolios.csv`.
-
-Adicionalmente, existe un flujo específico de **backtesting histórico**:
-
--   **Universo Histórico (`backtesting_companies.py`)**: Define un universo ampliado de compañías del IBEX35, incluyendo miembros antiguos utilizados únicamente para las simulaciones históricas.
--   **Backtesting Walk-Forward (`backtesting.py`)**: Ejecuta la estrategia sobre el universo histórico, reutilizando como librerías los mismos factores y datos de mercado que el sistema principal.
-
-## Requisitos Previos
-
-*   Python 3.8+
-*   Paquetes de Python necesarios (instalar vía `pip install -r requirements.txt` si está disponible, de lo contrario asegurar la instalación de los siguientes):
-    *   `pandas`, `numpy`, `scikit-learn`
-    *   `pysentimiento`, `torch`
-    *   `duckduckgo-search`, `newspaper3k`, `lxml`
-    *   `yfinance`
-
-## Guía de Uso
-
-Ejecute los siguientes scripts en orden para realizar el ciclo completo de análisis.
-
-### 1. Recolección de Datos y Análisis de Sentimiento
-Ejecute el scraper para recopilar las últimas noticias y calcular puntuaciones de sentimiento. Este proceso puede tomar tiempo dependiendo del volumen de noticias.
+1. Noticias y sentimiento:
 
 ```bash
 python scraper.py
 ```
 
-### 2. Descarga de Datos de Mercado
-Descargue los datos históricos de precios para todas las compañías del IBEX35.
+2. Datos de mercado:
 
 ```bash
 python market_data.py
 ```
 
-Este paso genera los ficheros de precios necesarios. Si solo existen las versiones estándar (`ibex35_market_data.csv`), el módulo de backtesting creará automáticamente una copia histórica con sufijo `_historic` la primera vez que se ejecute.
-
-### 3. Entrenamiento del Modelo y Predicción
-Entrene el modelo de IA utilizando los últimos datos de sentimiento y mercado para generar predicciones de retorno.
+3. Modelo de predicción:
 
 ```bash
 python investment_model.py
 ```
 
-### 4. Generación de Carteras
-Genere carteras de inversión optimizadas basadas en las predicciones del modelo.
+4. Carteras:
 
 ```bash
 python generate_portfolios.py
 ```
 
-### 5. Backtesting Histórico
-Ejecute el backtesting walk-forward utilizando los datos históricos generados (idénticos a los utilizados en el cuaderno `colab_backtest.ipynb`).
+5. Backtesting histórico:
 
 ```bash
 python backtesting.py
 ```
 
-El script utiliza por defecto los archivos:
+## Ficheros importantes
 
-- `ibex35_market_data_historic.csv`
+- `ibex35_news_sentiment.csv`
 - `ibex35_news_sentiment_historic.csv`
+- `ibex35_market_data.csv`
+- `ibex35_market_data_historic.csv`
+- `investment_report.csv`
+- `ibex35_portfolios.csv`
 
-Si estos archivos no existen pero están disponibles las versiones estándar (`ibex35_market_data.csv`, `ibex35_news_sentiment.csv`), se crearán automáticamente como copias iniciales para facilitar la migración.
+## Funcionamiento
 
-## Archivos de Salida
+- Noticias:
+  - Se extraen enlaces con DuckDuckGo y fuentes preferidas.
+  - Se analiza sentimiento con `pysentimiento` en español.
+  - Se guarda un score diario por empresa en `ibex35_news_sentiment.csv` (campos clave: `date`, `ticker`, `company`, `calibrated_score`).
+- Mercado:
+  - Se descargan precios diarios con `yfinance` a `ibex35_market_data.csv` (campos clave: `Date`, `Close` o `Adj Close`, `Volume`, `Ticker`, `Company`).
+- Factores:
+  - Se calculan momentum, volatilidad, beta, distancia a máximos 52 semanas, estacionalidad y liquidez.
+- Modelo:
+  - Objetivo: retorno a 1 semana centrado por mercado.
+  - Algoritmo: `RandomForestRegressor`.
+  - Se genera `investment_report.csv` con `Estimated_Return_1W` y `Security_Score` (basado en la dispersión de los estimadores).
+- Carteras:
+  - Se combinan señales técnicas y de sentimiento.
+  - Se aplican filtros simples de seguridad/umbral según estrategia.
 
-*   **`ibex35_news_sentiment.csv`**: Datos de sentimiento crudos para cada noticia procesada (última ejecución).
-*   **`ibex35_news_sentiment_historic.csv`**: Versión histórica consolidada usada para backtesting; si no existe, se inicializa como copia de `ibex35_news_sentiment.csv` cuando se ejecuta `backtesting.py`.
-*   **`ibex35_market_data.csv`**: Datos de mercado descargados más recientes.
-*   **`ibex35_market_data_historic.csv`**: Copia histórica de precios utilizada para backtesting; si no existe, se inicializa como copia de `ibex35_market_data.csv` cuando se ejecuta `backtesting.py`.
-*   **`investment_report.csv`**: Informe de predicción detallado por empresa, incluyendo retorno estimado semanal y puntuación de confianza/seguridad.
-*   **`ibex35_portfolios.csv`**: Recomendaciones finales de inversión agrupadas por estrategia, incluyendo la asignación de capital específica por empresa.
+## Backtesting histórico
 
-## Metodología
+- Universo:
+  - Usa compañías actuales y antiguas del IBEX (ver `backtesting_companies.py`).
+  - Solo afecta al backtesting; producción usa `companies.py`.
+- Datos:
+  - Por defecto lee `ibex35_market_data_historic.csv` y `ibex35_news_sentiment_historic.csv`.
+  - Si no existen, se copian desde los CSV estándar la primera vez.
+- Protocolo:
+  - Walk-forward semanal con rebalanceo los viernes.
+  - Entrenamiento con datos hasta la semana previa.
+  - Límite de concentración por sector y filtro de liquidez.
+  - Pesos acotados por posición.
 
-### Análisis de Sentimiento
-*   **Modelo**: Utiliza `pysentimiento/roberta-base-bne`, un modelo pre-entrenado en textos en español.
-*   **Fragmentación**: Los artículos se dividen en fragmentos de 1500 caracteres para asegurar una cobertura completa dentro del límite de tokens del modelo.
-*   **Puntuación**: La puntuación final es una métrica calibrada derivada de la probabilidad de sentimiento positivo menos la probabilidad de sentimiento negativo.
+## Supuestos y límites
 
-### Modelo de Inversión
-*   **Objetivo**: Retorno a 1 semana, decisión el viernes con datos del jueves.
-*   **Características**: Factores técnicos de corto plazo y sentimiento.
-*   **Estrategia de Trading**: Rebalanceo semanal sin costes de transacción, ejecución los viernes.
-
-### Asignación de Cartera
-*   **Estrategia**: Selección semanal de los mejores activos basada en predicción de retorno a corto plazo.
-
-## Resultados del Backtesting
-
-El módulo `backtesting.py` ejecuta un *backtest walk-forward* semanal con rebalanceo los viernes, utilizando exactamente los mismos datos históricos que el cuaderno `colab_backtest.ipynb`. Por defecto:
-
-- Se entrenan modelos de Random Forest sobre una ventana histórica mínima de 5 años (o desde la fecha indicada en `start_date`).
-- Las decisiones de inversión se toman el viernes utilizando información disponible hasta el cierre del jueves.
-- Se limita la concentración sectorial y se filtra por liquidez mediante `liquidity_flag`.
-
-La ejecución genera:
-
-- Un fichero `backtest_trades.csv` con el detalle de todas las operaciones simuladas.
-- Una curva de capital de la estrategia frente al benchmark de mercado.
-
-## Notas Técnicas sobre la Estrategia de Backtesting
-
-Es importante notar que la estrategia utilizada en el *Backtesting Walk-Forward* difiere ligeramente de las carteras generadas para producción (`generate_portfolios.py`):
-
-1.  **Lógica "Pure Alpha"**: El backtest simula una estrategia de **Maximización de Retorno Predicho** sin filtrar por incertidumbre (`Security_Score`). Es equivalente a una versión optimizada de la cartera *Technical Pure* con restricciones sectoriales estrictas.
-2.  **Gestión de Riesgo Estructural**:
-    *   **Diversificación Forzada**: Máximo 2 activos por sector GICS.
-    *   **Universo de Inversión**: Limitado dinámicamente por liquidez (`liquidity_flag`).
-3.  **Diferencia con Producción**: Las carteras de producción (ej. *Balanced*, *High Safety*) incorporan capas adicionales de seguridad (filtrado por varianza de predicción) y factores de sentimiento, sacrificando potencial de retorno máximo a cambio de una menor volatilidad y mayor robustez ("Sharpe Ratio" optimizado).
-
-El backtesting valida la **potencia predictiva bruta** del modelo (capacidad de generar Alpha), mientras que las carteras de producción adaptan esa señal para diferentes perfiles de aversión al riesgo.
-
----
-**Aviso Legal**: Este software es solo para fines educativos y de investigación. No constituye asesoramiento financiero.
+- Sin comisiones ni deslizamientos.
+- Ejecución semanal simplificada.
+- Las noticias pueden ser incompletas o ruidosas.
+- Las predicciones no garantizan resultados; `Security_Score` es una proxy de incertidumbre.

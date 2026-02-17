@@ -58,7 +58,6 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         df = df.dropna(subset=base_cols)
         feature_cols = base_cols
         
-    # Identificar Viernes (Weekday 4)
     df['Weekday'] = df['Date'].dt.weekday
     trade_dates = sorted(df[df['Weekday'] == 4]['Date'].unique())
     if start_date is not None:
@@ -76,8 +75,7 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
     benchmark_returns = []
     trade_log = []
     
-    # Entrenar cada X semanas para eficiencia (ej. cada 4 semanas = 1 mes)
-    retrain_freq = 4
+    retrain_freq = 1 # Bloques de 1 semana (aumentar para mejor rendimiento)
     model = None
     
     for i in range(start_idx, len(trade_dates) - 1):
@@ -87,13 +85,8 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         if pd.isna(feature_date):
             continue
         
-        # Retrain logic
         if (i - start_idx) % retrain_freq == 0:
             print(f"Re-entrenando modelo en {curr_date.date()}...")
-            # Entrenar con datos DISPONIBLES hasta hoy (excluyendo look-ahead del target)
-            # Target_1W en t necesita precio en t+5. 
-            # Por tanto, para entrenar en t, solo podemos usar filas donde t_row + 5 <= t
-            # Simplificación: Usar datos hasta hace 1 semana para asegurar etiquetas
             train_limit_date = feature_date - timedelta(days=7)
             train_df = df[df['Date'] <= train_limit_date].dropna(subset=['Target_1W'])
             
@@ -117,10 +110,6 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         if predict_df.empty:
             continue
             
-        # Benchmark Return (Market Average of universe)
-        # Calcular retorno del mercado entre curr_date y next_date
-        # Necesitamos precios en next_date para el universo disponible en curr_date
-        
         price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
         next_prices = df[df['Date'] == next_date].set_index('Company')[price_col]
         curr_prices = df[df['Date'] == curr_date].set_index('Company')[price_col]
@@ -129,8 +118,6 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
             benchmark_returns.append(0.0)
             continue
         
-        # Calcular retornos reales para todos los activos
-        # Solo para los que existen en ambas fechas
         common_companies = curr_prices.index.intersection(next_prices.index)
         if len(common_companies) == 0:
             period_returns.append(0.0)
@@ -140,7 +127,6 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         market_rets = (next_prices[common_companies] / curr_prices[common_companies]) - 1
         market_period_return = market_rets.mean()
         
-        # Preparar predicción
         sector_map = predict_df['Company'].map(lambda c: IBEX35_SECTORS.get(predict_df[predict_df['Company']==c]['Ticker'].iloc[0], 'Unknown'))
         predict_df['sector'] = sector_map
         
@@ -148,11 +134,10 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         predict_df['pred'] = model.predict(Xp)
         predict_df = predict_df.sort_values('pred', ascending=False)
         
-        # Selección
         sector_counts = {}
         selected = []
         for _, row in predict_df.iterrows():
-            if row['Company'] not in common_companies: continue # Skip if delisted next week
+            if row['Company'] not in common_companies: continue
             
             sec = row['sector']
             sector_counts.setdefault(sec, 0)
