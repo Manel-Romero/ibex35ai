@@ -5,7 +5,7 @@ pandas
 lxml_html_clean
 ddgs
 tqdm
-openpyxl
+openpyxl 
 yake
 fake-useragent
 curl_cffi
