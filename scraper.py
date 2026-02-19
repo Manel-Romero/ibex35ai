@@ -282,19 +282,19 @@ class IbexScraper:
             
             time.sleep(random.uniform(1.0, 2.0))
 
-    def run_recent(self):
-        print(f"Iniciando scraping de noticias RECIENTES (última semana)...")
+    def run_recent(self, timelimit="w", label="Última Semana"):
+        print(f"Iniciando scraping de noticias RECIENTES ({label})...")
         current_year = datetime.now().year
         
-        print("\n=== MACRO & MERCADO (Última Semana) ===")
+        print(f"\n=== MACRO & MERCADO ({label}) ===")
         macro_queries = [
             (f"economia españa actualidad", {'scope': 'national', 'ticker': 'ESP', 'sector': 'Macro'}),
             (f"ibex35 analisis semanal", {'scope': 'national', 'ticker': 'IBEX', 'sector': 'Market'}),
             (f"banco central europeo tipos interes", {'scope': 'international', 'ticker': 'ECB', 'sector': 'Macro'}),
         ]
-        self.process_query_group(macro_queries, current_year, max_workers=5, limit_per_query=5, timelimit='w')
+        self.process_query_group(macro_queries, current_year, max_workers=5, limit_per_query=5, timelimit=timelimit)
         
-        print("\n=== EMPRESAS IBEX35 (Última Semana) ===")
+        print(f"\n=== EMPRESAS IBEX35 ({label}) ===")
         company_queries = []
         for ticker, name in IBEX35_COMPANIES.items():
             sec = IBEX35_SECTORS.get(ticker, 'Unknown')
@@ -304,7 +304,7 @@ class IbexScraper:
         chunk_size = 5
         for i in range(0, len(company_queries), chunk_size):
             chunk = company_queries[i:i+chunk_size]
-            self.process_query_group(chunk, current_year, max_workers=10, limit_per_query=12, timelimit='w')
+            self.process_query_group(chunk, current_year, max_workers=10, limit_per_query=12, timelimit=timelimit)
 
     def run(self, start_year=2026, end_year=2015):
         print(f"Iniciando scraping unificado ({start_year}-{end_year})...")
@@ -361,5 +361,9 @@ class IbexScraper:
                 self.process_query_group(chunk, year, max_workers=10, limit_per_query=50)
 
 if __name__ == "__main__":
+    mode = os.environ.get("IBEXAI_SCRAPER_MODE", "weekly").lower()
     scraper = IbexScraper(save_raw_text=False)
-    scraper.run_recent()
+    if mode == "daily":
+        scraper.run_recent(timelimit="d", label="Últimas 24h")
+    else:
+        scraper.run_recent(timelimit="w", label="Última Semana")

@@ -1,9 +1,10 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
 from factors import compute_factors
 
-if __name__ == "__main__":
+
+def run_investment_model():
     market_df = pd.read_csv('ibex35_market_data.csv')
     news_df = pd.read_csv('ibex35_news_sentiment.csv')
 
@@ -16,6 +17,26 @@ if __name__ == "__main__":
     daily_sentiment = news_df.groupby(['company', 'date'])['calibrated_score'].mean().reset_index()
     daily_sentiment = daily_sentiment.rename(
         columns={'company': 'Company', 'date': 'Date', 'calibrated_score': 'Daily_Sentiment'}
+    )
+    sent_sorted = daily_sentiment.sort_values(['Company', 'Date']).copy()
+    sent_sorted['Sentiment_7D_all'] = (
+        sent_sorted.groupby('Company')['Daily_Sentiment']
+        .rolling(window=7, min_periods=1)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+    sent_sorted['Sentiment_30D_all'] = (
+        sent_sorted.groupby('Company')['Daily_Sentiment']
+        .rolling(window=30, min_periods=1)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+    current_sent = (
+        sent_sorted
+        .sort_values(['Company', 'Date'])
+        .groupby('Company')
+        .tail(1)[['Company', 'Sentiment_7D_all', 'Sentiment_30D_all']]
+        .rename(columns={'Sentiment_7D_all': 'Sentiment_7D_all_latest', 'Sentiment_30D_all': 'Sentiment_30D_all_latest'})
     )
 
     data = pd.merge(market_df, daily_sentiment, on=['Company', 'Date'], how='left')
@@ -81,24 +102,34 @@ if __name__ == "__main__":
         latest_feature_date = model_data['Date'].max()
 
     predict_data = model_data[model_data['Date'] == latest_feature_date].copy()
+    predict_data = predict_data.merge(current_sent, on='Company', how='left')
+    if 'Sentiment_7D_all_latest' in predict_data.columns:
+        predict_data['Sentiment_7D'] = predict_data['Sentiment_7D_all_latest'].fillna(predict_data['Sentiment_7D'])
+        predict_data['Sentiment_30D'] = predict_data['Sentiment_30D_all_latest'].fillna(predict_data['Sentiment_30D'])
+        predict_data = predict_data.drop(columns=['Sentiment_7D_all_latest', 'Sentiment_30D_all_latest'])
 
     X = train_data[feature_cols]
     y = train_data['Target_1W']
 
-    model = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=12,
-        min_samples_leaf=5,
-        max_features='sqrt',
-        random_state=42,
-        n_jobs=-1,
-    )
-    model.fit(X, y)
-
     X_pred = predict_data[feature_cols]
-    predicted_returns = model.predict(X_pred)
-    preds_all = np.array([est.predict(X_pred.values) for est in model.estimators_])
-    uncertainty = np.std(preds_all, axis=0)
+    seeds = [41, 42, 43, 44, 45]
+    preds_all = []
+    for seed in seeds:
+        model = XGBRegressor(
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='reg:squarederror',
+            random_state=seed,
+            n_jobs=-1
+        )
+        model.fit(X, y)
+        preds_all.append(model.predict(X_pred))
+    preds_all = np.array(preds_all)
+    predicted_returns = preds_all.mean(axis=0)
+    uncertainty = preds_all.std(axis=0)
 
     results = predict_data[['Company', 'Ticker', 'Close', 'Date']].copy()
     results['Estimated_Return_1W'] = predicted_returns
@@ -114,3 +145,7 @@ if __name__ == "__main__":
 
     results = results.sort_values('Estimated_Return_1W', ascending=False)
     results.to_csv('investment_report.csv', index=False)
+
+
+if __name__ == "__main__":
+    run_investment_model()

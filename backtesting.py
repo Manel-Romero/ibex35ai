@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
 from datetime import timedelta
 from factors import compute_factors
 from backtesting_companies import IBEX35_SECTORS_HISTORIC as IBEX35_SECTORS
@@ -21,6 +21,11 @@ def prepare_merged(market_csv='ibex35_market_data_historic.csv', sentiment_csv='
     df = pd.merge(m, daily, on=['Company','Date'], how='left')
     price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
     df = df[df[price_col].notna() & (df[price_col] > 0)]
+    df = df.sort_values(['Company','Date'])
+    med_price = df.groupby('Company')[price_col].transform('median')
+    df = df[(df[price_col] >= med_price * 0.01) & (df[price_col] <= med_price * 100)]
+    ret_clean = df.groupby('Company')[price_col].pct_change(1)
+    df = df[(ret_clean.abs() <= 1.0) | ret_clean.isna()]
     if use_sentiment:
         df['Daily_Sentiment'] = df.groupby('Company')['Daily_Sentiment'].ffill(limit=5).fillna(0.0)
         
@@ -59,7 +64,7 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         feature_cols = base_cols
         
     df['Weekday'] = df['Date'].dt.weekday
-    trade_dates = sorted(df[df['Weekday'] == 4]['Date'].unique())
+    trade_dates = sorted(df[df['Weekday'] == 3]['Date'].unique())
     if start_date is not None:
         start_dt = pd.to_datetime(start_date)
         start_idx = next((i for i, d in enumerate(trade_dates) if d >= start_dt), len(trade_dates))
@@ -68,7 +73,7 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
         while start_idx < len(trade_dates) and (trade_dates[start_idx] - trade_dates[0]).days < train_years*365:
             start_idx += 1
     
-    print(f"Iniciando Backtest Semanal (Viernes con datos del día previo) - {len(trade_dates)-start_idx} semanas...")
+    print(f"Iniciando Backtest Semanal - {len(trade_dates)-start_idx} semanas...")
     
     curves = []
     period_returns = []
@@ -81,7 +86,7 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
     for i in range(start_idx, len(trade_dates) - 1):
         curr_date = trade_dates[i]
         next_date = trade_dates[i+1]
-        feature_date = df[df['Date'] < curr_date]['Date'].max()
+        feature_date = curr_date
         if pd.isna(feature_date):
             continue
         
@@ -93,11 +98,13 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
             if len(train_df) > 100:
                 X = train_df[feature_cols]
                 y = train_df['Target_1W']
-                model = RandomForestRegressor(
-                    n_estimators=100,
-                    max_depth=12,
-                    min_samples_leaf=5,
-                    max_features='sqrt',
+                model = XGBRegressor(
+                    n_estimators=200,
+                    max_depth=6,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    objective='reg:squarederror',
                     random_state=42,
                     n_jobs=-1
                 )
@@ -218,4 +225,4 @@ def backtest_walkforward(train_years=5, top_n=6, max_per_sector=2, max_weight=0.
     return pd.DataFrame({'Date': trade_dates[start_idx:][:len(equity_curve)], 'Equity': equity_curve, 'Benchmark': benchmark_curve})
 
 if __name__ == "__main__":
-    backtest_walkforward()
+    backtest_walkforward(start_date="2005-01-01")

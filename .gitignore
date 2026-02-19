@@ -1,9 +1,7 @@
 /.venv
 /backtest_trades.csv
-/ibex35_market_data.csv
-/ibex35_news_sentiment.csv
-/ibex35_portfolios.csv
-/investment_plan.csv
-/investment_report.csv
+/ibex35_*.csv
 /scraper.log
 /__pycache__
+/investment_report.csv
+/colab_backtest.ipynb
