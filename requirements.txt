@@ -3,7 +3,7 @@ beautifulsoup4
 newspaper3k
 pandas
 lxml_html_clean
-duckduckgo-search
+ddgs
 tqdm
 openpyxl
 yake
